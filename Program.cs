@@ -3,14 +3,17 @@ using System.CommandLine.Rendering;
 using HtmlAgilityPack;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LinguaInRete;
 
 public class Program
 {
-    static HttpClient httpClient = new HttpClient();
+    private static readonly HttpClient httpClient = new HttpClient();
 
-    async public static Task<int> Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
         var rootCommand = new RootCommand("Searches Italian definitions and synonyms");
         var wordArgument = new Argument<string>("word", "The word to search for");
@@ -62,35 +65,19 @@ public class Program
         return await rootCommand.InvokeAsync(args);
     }
 
-    async static Task<string?> GetTreccaniDefinitionAsync(string word, bool isEnciclopedia)
+    private static async Task<string?> GetTreccaniDefinitionAsync(string word, bool isEnciclopedia, CancellationToken cancellationToken = default)
     {
         var url = isEnciclopedia
             ? $"https://www.treccani.it/enciclopedia/{word}"
             : $"https://www.treccani.it/vocabolario/{word}";
 
-        var html = await httpClient.GetStringAsync(url);
+        var html = await httpClient.GetStringAsync(url, cancellationToken);
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
-        HtmlNode? contentNode = null;
-        if (isEnciclopedia)
-        {
-            contentNode = doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'Term_termContent__UHoTq')]");
-        }
-        else
-        {
-            var paragraphs = doc.DocumentNode.SelectNodes("//p[contains(@class, 'MuiTypography-root MuiTypography-bodyL css-d8t48w')]");
-
-            // If there are at least two paragraphs, select the second one
-            if (paragraphs != null && paragraphs.Count >= 2)
-            {
-                contentNode = paragraphs[1];
-            }
-            else
-            {
-                return "Definition not found.";
-            }
-        }
+        HtmlNode? contentNode = isEnciclopedia
+            ? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'Term_termContent__UHoTq')]")
+            : doc.DocumentNode.SelectNodes("//p[contains(@class, 'MuiTypography-root MuiTypography-bodyL css-d8t48w')]")?.ElementAtOrDefault(1);
 
         if (contentNode == null) return null;
 
@@ -107,9 +94,9 @@ public class Program
         return SanitizeText(processed, word);
     }
 
-    async static Task<string?> GetSinonimiDefinitionAsync(string word)
+    private static async Task<string?> GetSinonimiDefinitionAsync(string word, CancellationToken cancellationToken = default)
     {
-        var html = await httpClient.GetStringAsync($"https://sinonimi.it/{word}");
+        var html = await httpClient.GetStringAsync($"https://sinonimi.it/{word}", cancellationToken);
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
@@ -122,7 +109,7 @@ public class Program
         return SanitizeText($"{Capitalize(word)}:\n{processed}", word);
     }
 
-    static string ProcessEnciclopediaContent(HtmlNode node)
+    private static string ProcessEnciclopediaContent(HtmlNode node)
     {
         var sb = new StringBuilder();
         foreach (var child in node.ChildNodes)
@@ -137,10 +124,10 @@ public class Program
         return sb.ToString().Trim();
     }
 
-    static string ProcessVocabolarioContent(HtmlNode node) =>
+    private static string ProcessVocabolarioContent(HtmlNode node) =>
         ProcessHtmlContent(node).Trim();
 
-    static string ProcessHtmlContent(HtmlNode node)
+    private static string ProcessHtmlContent(HtmlNode node)
     {
         var sb = new StringBuilder();
 
@@ -174,14 +161,12 @@ public class Program
         return sb.ToString();
     }
 
-    // TODO: remove every .css{} from string
-    static string SanitizeText(string text, string word)
+    private static string SanitizeText(string text, string word)
     {
         word = "";
         return text;
     }
 
-    static string Capitalize(string s) =>
+    private static string Capitalize(string s) =>
         string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..].ToLower();
-
 }
