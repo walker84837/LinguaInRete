@@ -15,11 +15,11 @@ public class Program
 
     public static async Task<int> Main(string[] args)
     {
-        var rootCommand = new RootCommand("Searches Italian definitions and synonyms");
-        var wordArgument = new Argument<string>("word", "The word to search for");
-        var vocabolarioOption = new Option<bool>(new[] { "--vocabolario", "-v" }, "Search Treccani Vocabolario");
-        var sinonimoOption = new Option<bool>(new[] { "--sinonimo", "-s" }, "Search synonyms on sinonimi.it");
-        var enciclopediaOption = new Option<bool>(new[] { "--enciclopedia", "-e" }, "Search Treccani Enciclopedia");
+        var rootCommand = new RootCommand("Cerca definizioni di parole oppure i loro sinonimi");
+        var wordArgument = new Argument<string>("word", "La parola da cercare");
+        var vocabolarioOption = new Option<bool>(new[] { "--vocabolario", "-v", "-voc" }, "Cerca nel vocabolario Treccani");
+        var sinonimoOption = new Option<bool>(new[] { "--sinonimo", "-s", "-sin" }, "Cerca sinonimi su sinonimi.it");
+        var enciclopediaOption = new Option<bool>(new[] { "--enciclopedia", "-e", "-enc" }, "Cerca nell'enciclopedia di Treccani");
 
         httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AcmeInc/1.0)");
         rootCommand.AddArgument(wordArgument);
@@ -36,15 +36,15 @@ public class Program
             {
                 if (isEnciclopedia)
                 {
-                    definition = await GetTreccaniDefinitionAsync(wordToSearch, true);
+                    definition = await GetTreccaniAsync(wordToSearch, true);
                 }
                 else if (isVocabolario)
                 {
-                    definition = await GetTreccaniDefinitionAsync(wordToSearch, false);
+                    definition = await GetTreccaniAsync(wordToSearch, false);
                 }
                 else if (isSinonimo)
                 {
-                    definition = await GetSinonimiDefinitionAsync(wordToSearch);
+                    definition = await GetSinonimiAsync(wordToSearch);
                 }
 
                 if (string.IsNullOrWhiteSpace(definition))
@@ -65,7 +65,7 @@ public class Program
         return await rootCommand.InvokeAsync(args);
     }
 
-    private static async Task<string?> GetTreccaniDefinitionAsync(string word, bool isEnciclopedia, CancellationToken cancellationToken = default)
+    private static async Task<string?> GetTreccaniAsync(string word, bool isEnciclopedia, CancellationToken cancellationToken = default)
     {
         var url = isEnciclopedia
             ? $"https://www.treccani.it/enciclopedia/{word}"
@@ -91,22 +91,28 @@ public class Program
             ? ProcessEnciclopediaContent(contentNode)
             : ProcessVocabolarioContent(contentNode);
 
-        return SanitizeText(processed, word);
+        return Regex.Replace(processed, @".css(.*){(.*)}", "");
     }
 
-    private static async Task<string?> GetSinonimiDefinitionAsync(string word, CancellationToken cancellationToken = default)
+    private static async Task<string?> GetSinonimiAsync(string word, CancellationToken cancellationToken = default)
     {
         var html = await httpClient.GetStringAsync($"https://sinonimi.it/{word}", cancellationToken);
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
-        var contentNode = doc.DocumentNode.SelectSingleNode(
-            "//div[contains(@class, 'bg-[#EFF2F1]') and contains(@class, 'border-2')]");
+        var contentNode = doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'bg-[#EFF2F1]') and contains(@class, 'border-2')]");
 
         if (contentNode == null) return null;
 
         var processed = ProcessHtmlContent(contentNode);
-        return SanitizeText($"{Capitalize(word)}:\n{processed}", word);
+
+        var capitalizedWord = Capitalize(word);
+        var sinonimiList = CleanSinonimiList(processed, capitalizedWord);
+        var sinonimi = string.Join(", ", sinonimiList);
+
+        var finalString = $"{capitalizedWord}:\n{sinonimi}";
+
+        return finalString;
     }
 
     private static string ProcessEnciclopediaContent(HtmlNode node)
@@ -161,12 +167,27 @@ public class Program
         return sb.ToString();
     }
 
-    private static string SanitizeText(string text, string word)
+    private static string[] CleanSinonimiList(string input, string word)
     {
-        word = "";
-        return text;
+        string headWord = word;
+        string output = input;
+
+        // 1. Replace "Sinonimo di {headWord}" with a comma.
+        // We use Regex.Escape in case the head word contains special symbols.
+        string patternSinonimo = @"Sinonimo di " + Regex.Escape(headWord);
+        output = Regex.Replace(output, patternSinonimo, "");
+
+        // 2. From the marker "Contrario di {headWord}" to the NEXT "Vedi anche:" we want to
+        // remove that whole substring and replace it with a comma.
+        string patternContrario = @"Contrario di " + Regex.Escape(headWord) + @".*?Vedi anche:";
+        output = Regex.Replace(output, patternContrario, ", ");
+
+        // 3. Also for the FIRST occurrence of "Vedi anche:" if it wasn’t already
+        // removed by the previous replacement, we replace it with a comma.
+        output = Regex.Replace(output, @"Vedi anche:", ", ");
+
+        return output.Split(", ");
     }
 
-    private static string Capitalize(string s) =>
-        string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..].ToLower();
+    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..].ToLower();
 }
