@@ -76,8 +76,8 @@ public class Program
         doc.LoadHtml(html);
 
         HtmlNode? contentNode = isEnciclopedia
-            ? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'Term_termContent__UHoTq')]")
-            : doc.DocumentNode.SelectNodes("//p[contains(@class, 'MuiTypography-root MuiTypography-bodyL css-d8t48w')]")?.ElementAtOrDefault(1);
+            ? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 MuiGrid-grid-lg-7 Term_termContent__pwanb term-content css-1t9ge1w')]")
+            : doc.DocumentNode.SelectNodes("//p[contains(@class, 'MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 MuiGrid-grid-lg-7 Term_termContent__pwanb term-content css-1t9ge1w')]")?.ElementAtOrDefault(1);
 
         if (contentNode == null) return null;
 
@@ -172,18 +172,12 @@ public class Program
         string headWord = word;
         string output = input;
 
-        // 1. Replace "Sinonimo di {headWord}" with a comma.
-        // We use Regex.Escape in case the head word contains special symbols.
         string patternSinonimo = @"Sinonimo di " + Regex.Escape(headWord);
         output = Regex.Replace(output, patternSinonimo, "");
 
-        // 2. From the marker "Contrario di {headWord}" to the NEXT "Vedi anche:" we want to
-        // remove that whole substring and replace it with a comma.
         string patternContrario = @"Contrario di " + Regex.Escape(headWord) + @".*?Vedi anche:";
         output = Regex.Replace(output, patternContrario, ", ");
 
-        // 3. Also for the FIRST occurrence of "Vedi anche:" if it wasn’t already
-        // removed by the previous replacement, we replace it with a comma.
         output = Regex.Replace(output, @"Vedi anche:", ", ");
 
         return output.Split(", ");
