@@ -8,7 +8,7 @@ namespace LinguaInRete;
 
 public class Program
 {
-    private static readonly HttpClient HttpClient = new HttpClient();
+    private static readonly HttpClient HttpClient = new();
 
     public static async Task<int> Main(string[] args)
     {
