@@ -115,19 +115,63 @@ public class Program
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
-        var contentNode = doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'bg-[#EFF2F1]') and contains(@class, 'border-2')]");
+        var container = doc.DocumentNode.SelectSingleNode("//div[contains(@class,'contenuto')]") ?? doc.DocumentNode;
 
-        if (contentNode == null) return null;
+        var synAnchors = container.SelectNodes(
+            ".//h3[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sinonimo')]/following-sibling::p[1]//a")
+            ?? container.SelectNodes("//p[contains(@class,'sinonimi')]//a")
+            ?? container.SelectNodes("//div[contains(@class,'bg-[#EFF2F1]')]//p//a");
 
-        var processed = ProcessHtmlContent(contentNode);
+        var contraAnchors = container.SelectNodes(
+            ".//h3[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'contrario')]/following-sibling::p[1]//a")
+            ?? container.SelectNodes("//p[contains(@class,'contrari')]//a");
 
-        var capitalizedWord = Capitalize(word);
-        var sinonimiList = CleanSinonimiList(processed, capitalizedWord);
-        var sinonimi = string.Join(", ", sinonimiList);
+        var vediAnchors = container.SelectNodes(
+            ".//h4[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'vedi')]/following-sibling::p[1]//a")
+            ?? container.SelectNodes("//p[contains(@class,'vedianche')]//a");
 
-        var finalString = $"{capitalizedWord}:\n{sinonimi}";
+        static List<string> ExtractTexts(HtmlNodeCollection? nodes)
+        {
+            if (nodes == null) return [];
+            return nodes
+                .Select(n => HtmlEntity.DeEntitize(n.InnerText ?? "").Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
 
-        return finalString;
+        var synList = ExtractTexts(synAnchors);
+        var contraList = ExtractTexts(contraAnchors);
+        var vediList = ExtractTexts(vediAnchors);
+
+        if (!synList.Any() && !contraList.Any() && !vediList.Any())
+        {
+            var processed = ProcessHtmlContent(container);
+            var capitalizedWord = Capitalize(word);
+            var fallbackList = CleanSinonimiList(processed, capitalizedWord)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (fallbackList.Length == 0) return null;
+            return $"{Capitalize(word)}:\n{string.Join(", ", fallbackList)}";
+        }
+
+        var sb = new StringBuilder();
+        var header = Capitalize(word);
+        sb.AppendLine(header);
+
+        if (synList.Any())
+            sb.AppendLine($"Sinonimi: {string.Join(", ", synList)}");
+
+        if (contraList.Any())
+            sb.AppendLine($"Contrari: {string.Join(", ", contraList)}");
+
+        if (vediList.Any())
+            sb.AppendLine($"Vedi anche: {string.Join(", ", vediList)}");
+
+        return sb.ToString().Trim();
     }
 
     private static string ProcessEnciclopediaContent(HtmlNode node)
