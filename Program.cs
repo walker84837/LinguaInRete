@@ -3,9 +3,6 @@ using System.CommandLine.Rendering;
 using HtmlAgilityPack;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace LinguaInRete;
 
