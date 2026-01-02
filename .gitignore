@@ -424,3 +424,4 @@ FodyWeavers.xsd
 *.resources
 test-results/
 
+/.idea/
