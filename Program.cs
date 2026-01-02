@@ -14,9 +14,9 @@ public class Program
     {
         var rootCommand = new RootCommand("Cerca definizioni di parole oppure i loro sinonimi");
         var wordArgument = new Argument<string>("word", "La parola da cercare");
-        var vocabolarioOption = new Option<bool>(new[] { "--vocabolario", "-v", "-voc" }, "Cerca nel vocabolario Treccani");
-        var sinonimoOption = new Option<bool>(new[] { "--sinonimo", "-s", "-sin" }, "Cerca sinonimi su sinonimi.it");
-        var enciclopediaOption = new Option<bool>(new[] { "--enciclopedia", "-e", "-enc" }, "Cerca nell'enciclopedia di Treccani");
+        var vocabolarioOption = new Option<bool>(["--vocabolario", "-v", "-voc"], "Cerca nel vocabolario Treccani");
+        var sinonimoOption = new Option<bool>(["--sinonimo", "-s", "-sin"], "Cerca sinonimi su sinonimi.it");
+        var enciclopediaOption = new Option<bool>(["--enciclopedia", "-e", "-enc"], "Cerca nell'enciclopedia di Treccani");
 
         httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AcmeInc/1.0)");
         rootCommand.AddArgument(wordArgument);
