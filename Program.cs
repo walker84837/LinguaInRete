@@ -8,7 +8,7 @@ namespace LinguaInRete;
 
 public class Program
 {
-    private static readonly HttpClient httpClient = new HttpClient();
+    private static readonly HttpClient HttpClient = new HttpClient();
 
     public static async Task<int> Main(string[] args)
     {
@@ -18,7 +18,7 @@ public class Program
         var sinonimoOption = new Option<bool>(["--sinonimo", "-s", "-sin"], "Cerca sinonimi su sinonimi.it");
         var enciclopediaOption = new Option<bool>(["--enciclopedia", "-e", "-enc"], "Cerca nell'enciclopedia di Treccani");
 
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AcmeInc/1.0)");
+        HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AcmeInc/1.0)");
         rootCommand.AddArgument(wordArgument);
         rootCommand.AddOption(vocabolarioOption);
         rootCommand.AddOption(sinonimoOption);
@@ -68,50 +68,46 @@ public class Program
             ? $"https://www.treccani.it/enciclopedia/{word}"
             : $"https://www.treccani.it/vocabolario/{word}";
 
-        var html = await httpClient.GetStringAsync(url, cancellationToken);
+        var html = await HttpClient.GetStringAsync(url, cancellationToken);
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
-        HtmlNode? contentNode = isEnciclopedia
-            ? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 MuiGrid-grid-lg-7 Term_termContent__pwanb term-content css-1t9ge1w')]")
-            : doc.DocumentNode.SelectNodes("//p[contains(@class, 'MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 MuiGrid-grid-lg-7 Term_termContent__pwanb term-content css-1t9ge1w')]")?.ElementAtOrDefault(1);
+        // Look for the main container in a robust way (don't depend on the entire class string)
+        HtmlNode? contentNode = doc.DocumentNode.SelectSingleNode("//div[contains(@class,'term-content')]")
+                               ?? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'Term_termContent') or contains(@class,'Term_termContent__')]");
 
         if (contentNode == null) return null;
 
-        foreach (var strong in contentNode.Descendants("strong").ToList())
+        // Search for relevant paragraphs *within* the contentNode (both for "vocabolario" and "enciclopedia")
+        var vocNodes = contentNode.SelectNodes(
+            ".//div[contains(@class,'term-paragraph') or contains(@class,'Term_elTermParagraph') or contains(@class,'paywall')]//p[contains(@class,'MuiTypography-root') and contains(@class,'MuiTypography-bodyL')]"
+        ) ?? contentNode.SelectNodes(".//p[contains(@class,'MuiTypography-root') and contains(@class,'MuiTypography-bodyL')]");
+
+        if (vocNodes == null || vocNodes.Count == 0) return null;
+
+        foreach (var node in vocNodes)
         {
-            var vocNodes = doc.DocumentNode.SelectNodes(
-                "//div[contains(@class,'term-paragraph') or contains(@class,'Term_elTermParagraph') or contains(@class,'paywall')]//p[contains(@class,'MuiTypography-root') and contains(@class,'MuiTypography-bodyL')]"
-            );
+            var strongs = node.SelectNodes(".//strong");
+            if (strongs == null) continue;
 
-            if (vocNodes == null || vocNodes.Count == 0)
+            foreach (var s in strongs.ToList())
             {
-                vocNodes = doc.DocumentNode.SelectNodes("//p[contains(@class,'MuiTypography-root') and contains(@class,'MuiTypography-bodyL')]");
+                if (s.Descendants("a").Any(a => a.GetAttributeValue("id", "") == "link2"))
+                    s.Remove();
             }
-
-            if (vocNodes == null || vocNodes.Count == 0) return null;
-
-            foreach (var node in vocNodes)
-            {
-                foreach (var strong in node.Descendants("strong").ToList())
-                {
-                    if (strong.Descendants("a").Any(a => a.GetAttributeValue("id", "") == "link2"))
-                        strong.Remove();
-                }
-            }
-
-            var processedParagraphs = vocNodes.Select(n => ProcessVocabolarioContent(n));
-            processed = string.Join("\n\n", processedParagraphs).Trim();
         }
 
-        if (processed == null) return null;
+        var processedParagraphs = vocNodes.Select(n => ProcessHtmlContent(n).Trim());
+        string processed = string.Join("\n\n", processedParagraphs).Trim();
+
+        if (string.IsNullOrWhiteSpace(processed)) return null;
 
         return Regex.Replace(processed, @".css(.*){(.*)}", "");
     }
 
     private static async Task<string?> GetSinonimiAsync(string word, CancellationToken cancellationToken = default)
     {
-        var html = await httpClient.GetStringAsync($"https://sinonimi.it/{word}", cancellationToken);
+        var html = await HttpClient.GetStringAsync($"https://sinonimi.it/{word}", cancellationToken);
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
@@ -174,24 +170,6 @@ public class Program
         return sb.ToString().Trim();
     }
 
-    private static string ProcessEnciclopediaContent(HtmlNode node)
-    {
-        var sb = new StringBuilder();
-        foreach (var child in node.ChildNodes)
-        {
-            var processed = ProcessHtmlContent(child);
-            if (!string.IsNullOrWhiteSpace(processed))
-            {
-                sb.AppendLine(processed);
-                sb.AppendLine();
-            }
-        }
-        return sb.ToString().Trim();
-    }
-
-    private static string ProcessVocabolarioContent(HtmlNode node) =>
-        ProcessHtmlContent(node).Trim();
-
     private static string ProcessHtmlContent(HtmlNode node)
     {
         var sb = new StringBuilder();
@@ -199,28 +177,58 @@ public class Program
         if (node.NodeType == HtmlNodeType.Text)
         {
             sb.Append(HtmlEntity.DeEntitize(node.InnerText));
+            return sb.ToString();
         }
-        else if (node.NodeType == HtmlNodeType.Element)
+
+        if (node.NodeType != HtmlNodeType.Element)
+            return string.Empty;
+
+        switch (node.Name.ToLowerInvariant())
         {
-            switch (node.Name.ToLower())
-            {
-                case "strong":
-                    sb.Append(Ansi.Text.BoldOn);
-                    foreach (var child in node.ChildNodes)
-                        sb.Append(ProcessHtmlContent(child));
-                    sb.Append(Ansi.Text.BoldOff);
-                    break;
-                case "em":
-                    sb.Append("\x1B[3m"); // Start italic
-                    foreach (var child in node.ChildNodes)
-                        sb.Append(ProcessHtmlContent(child));
-                    sb.Append("\x1B[23m"); // End italic
-                    break;
-                default:
-                    foreach (var child in node.ChildNodes)
-                        sb.Append(ProcessHtmlContent(child));
-                    break;
-            }
+            case "strong":
+                sb.Append(Ansi.Text.BoldOn);
+                foreach (var child in node.ChildNodes)
+                    sb.Append(ProcessHtmlContent(child));
+                sb.Append(Ansi.Text.BoldOff);
+                break;
+
+            case "em":
+                sb.Append("\x1B[3m"); // italic on
+                foreach (var child in node.ChildNodes)
+                    sb.Append(ProcessHtmlContent(child));
+                sb.Append("\x1B[23m"); // italic off
+                break;
+
+            case "br":
+                sb.AppendLine();
+                break;
+
+            case "p":
+                foreach (var child in node.ChildNodes)
+                    sb.Append(ProcessHtmlContent(child));
+                sb.AppendLine();
+                break;
+
+            case "sup":
+                // ignore notes, numbers, references
+                break;
+
+            case "a":
+                // keep only the link text
+                foreach (var child in node.ChildNodes)
+                    sb.Append(ProcessHtmlContent(child));
+                break;
+
+            case "span":
+                // span is just styling, so ignore it
+                foreach (var child in node.ChildNodes)
+                    sb.Append(ProcessHtmlContent(child));
+                break;
+
+            default:
+                foreach (var child in node.ChildNodes)
+                    sb.Append(ProcessHtmlContent(child));
+                break;
         }
 
         return sb.ToString();
