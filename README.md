@@ -1,5 +1,7 @@
 # LinguaInRete
 
+[English 🇺🇸/🇬🇧](README.en.md)
+
 Questo progetto è un'applicazione da riga di comando in C# per interagire con risorse linguistiche online.
 
 ## Istruzioni per la compilazione
