@@ -80,13 +80,31 @@ public class Program
 
         foreach (var strong in contentNode.Descendants("strong").ToList())
         {
-            if (strong.Descendants("a").Any(a => a.GetAttributeValue("id", "") == "link2"))
-                strong.Remove();
+            var vocNodes = doc.DocumentNode.SelectNodes(
+                "//div[contains(@class,'term-paragraph') or contains(@class,'Term_elTermParagraph') or contains(@class,'paywall')]//p[contains(@class,'MuiTypography-root') and contains(@class,'MuiTypography-bodyL')]"
+            );
+
+            if (vocNodes == null || vocNodes.Count == 0)
+            {
+                vocNodes = doc.DocumentNode.SelectNodes("//p[contains(@class,'MuiTypography-root') and contains(@class,'MuiTypography-bodyL')]");
+            }
+
+            if (vocNodes == null || vocNodes.Count == 0) return null;
+
+            foreach (var node in vocNodes)
+            {
+                foreach (var strong in node.Descendants("strong").ToList())
+                {
+                    if (strong.Descendants("a").Any(a => a.GetAttributeValue("id", "") == "link2"))
+                        strong.Remove();
+                }
+            }
+
+            var processedParagraphs = vocNodes.Select(n => ProcessVocabolarioContent(n));
+            processed = string.Join("\n\n", processedParagraphs).Trim();
         }
 
-        var processed = isEnciclopedia
-            ? ProcessEnciclopediaContent(contentNode)
-            : ProcessVocabolarioContent(contentNode);
+        if (processed == null) return null;
 
         return Regex.Replace(processed, @".css(.*){(.*)}", "");
     }
